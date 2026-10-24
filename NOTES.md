@@ -1,9 +1,29 @@
-Problems found:
+# Implementation Notes
 
-My Additions:
+## Problems found
 
-How AI tools were used:
+- The free-window search excluded its final legal start. Included that boundary and added full-day and exact-end tests.
+- Durations were truncated and search bounds could offer starts before the requested time or after work. Validate durations, round bounds inward, and enumerate every legal window on the configured grid.
+- Day-part parsing overwrote explicit bounds: “afternoon after 16:00” returned afternoon times before 16:00. Intersect these constraints and reject contradictions.
+- A model could omit Sam from a Priya-and-Sam request and offer times when Sam was busy. Independently check explicit attendee clauses and known name mentions before tool execution. Time-only follow-ups retain the verified group; explicit replacements use the new group. Reject mismatches and unsupported additive/negative edits.
+- Model final text could invent times. Render verified current-turn tool results instead.
 
-1. Explain current architecture and test cases.
+## My additions
 
-What I would do next:
+- Fifteen-minute scheduling supports exact 45-minute meetings. Prompts derive the interval and working hours from the core.
+- The conversation/model support included here is required to check inherited attendee groups and regression-test explicit-bound parsing offline. CLI entry-point changes are separate.
+- Directory resolution uses normalized exact identities and conservative fuzzy matching (0.80 similarity, 0.10 minimum lead); ambiguous names require clarification.
+
+## How AI tools were used
+
+- AI reviewed the architecture and implemented fixes and regression tests.
+- Corrected AI's hardcoded prompt interval to derive it from slots.py.
+- Corrected AI's exact-only identity matching and real-model-only interactive assumption; offline FakeModel behavior is covered by tests.
+
+## Validation and assumptions
+
+- Corrected the original afternoon expectation, which encoded a missing final window, and updated slot tests for the finer grid and strict full-day lengths.
+- Verified availability against an independent interval-overlap oracle: 6,048 sample-calendar combinations and 1,000 generated calendars with off-grid/overlapping busy blocks.
+- Regression tests cover model omission/addition of attendees, typo resolution, inherited/replaced groups, explicit day-part bounds, and conflicting bounds.
+- Missing calendar entries for known employees mean no recorded busy blocks. Completeness is defined over the configured grid and supported durations.
+- Attendee checks handle explicit lists and known mentions, not unrestricted natural language or implicit references. Structured confirmation remains necessary for unrestricted interpretation guarantees. Booking remains outside scope.

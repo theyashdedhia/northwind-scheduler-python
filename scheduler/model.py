@@ -42,3 +42,102 @@ def tool_call(name: str, **args) -> str:
 def final(text: str) -> str:
     """Helper to build a scripted final answer."""
     return json.dumps({"final": text})
+
+
+class InteractiveFakeModel(FakeModel):
+    """Offline fake with a small scheduling grammar, not general language understanding.
+
+    Unlike scripted FakeModel, responses are derived from the conversation.
+    Successful tool arguments provide defaults for subsequent questions.
+    """
+
+    def __init__(self, today: str = "2026-11-02"):
+        super().__init__([])
+        self.today = today
+
+    def complete(self, messages: list[dict]) -> str:
+        import re
+        from datetime import date, timedelta
+
+        self.calls.append(copy.deepcopy(messages))
+        if messages[-1]["role"] == "tool":
+            return final("done")
+        text = messages[-1]["content"].strip()
+        if re.fullmatch(r"(?:list |show )?(?:people|employees|directory)[.!?]?", text, re.I):
+            return tool_call("list_people")
+        args = {}
+        for index, message in enumerate(messages[:-1]):
+            if message["role"] != "assistant":
+                continue
+            try:
+                action = json.loads(message["content"])
+            except (ValueError, TypeError):
+                continue
+            if (isinstance(action, dict) and action.get("tool") == "find_free_slots"
+                    and index + 1 < len(messages) and messages[index + 1]["role"] == "tool"):
+                args = dict(action["args"])
+        # Extract names as written, including unknown names; resolution belongs to tools.
+        recognized = False
+        from .requests import attendee_names
+        names = attendee_names(text)
+        if names:
+            recognized = True
+            args["attendees"] = names
+        duration = re.search(r"\b(\d+)\s*(?:mins?|minutes?)\b", text, re.I)
+        hours = re.search(r"\b(an?|one|\d+)\s+hours?\b", text, re.I)
+        if duration:
+            recognized = True
+            args["duration_minutes"] = int(duration.group(1))
+        elif hours:
+            recognized = True
+            args["duration_minutes"] = (int(hours.group(1)) if hours.group(1).isdigit() else 1) * 60
+        explicit_date = re.search(r"\b\d{4}-\d{2}-\d{2}\b", text)
+        weekday = re.search(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", text, re.I)
+        today = date.fromisoformat(self.today)
+        if explicit_date:
+            recognized = True
+            args["date"] = explicit_date.group()
+        elif weekday:
+            recognized = True
+            day = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].index(weekday.group().lower())
+            offset = (day - today.weekday()) % 7
+            if re.search(r"\bnext\b", text, re.I) and offset == 0:
+                offset = 7
+            args["date"] = (today + timedelta(days=offset)).isoformat()
+        elif re.search(r"\btomorrow\b", text, re.I):
+            recognized = True
+            args["date"] = (today + timedelta(days=1)).isoformat()
+        elif re.search(r"\btoday\b", text, re.I):
+            recognized = True
+            args["date"] = self.today
+        # New time constraints replace old bounds rather than accumulating them.
+        if re.search(r"\b(after|before|at|from|between|morning|afternoon|noon)\b", text, re.I):
+            for bound in re.finditer(r"\b(?:after|before|from|to)\s+(\S+)", text, re.I):
+                if not re.fullmatch(r"\d{2}:\d{2}|noon", bound.group(1).rstrip("?.!,"), re.I):
+                    return final("clarification needed")
+            if re.search(r"\bbetween\b", text, re.I) and not re.search(
+                    r"\bbetween\s+\d{2}:\d{2}\s+and\s+\d{2}:\d{2}", text, re.I):
+                return final("clarification needed")
+            args.pop("earliest", None)
+            args.pop("latest", None)
+            for word, key in [("after", "earliest"), ("before", "latest"), ("from", "earliest"), ("to", "latest")]:
+                match = re.search(rf"\b{word}\s+(\d{{2}}:\d{{2}}|noon)\b", text, re.I)
+                if match:
+                    recognized = True
+                    args[key] = "12:00" if match.group(1).lower() == "noon" else match.group(1)
+            between = re.search(r"\bbetween\s+(\d{2}:\d{2})\s+and\s+(\d{2}:\d{2})", text, re.I)
+            if between:
+                recognized = True
+                args.update(earliest=between.group(1), latest=between.group(2))
+            if re.search(r"\bafternoon\b", text, re.I):
+                recognized = True
+                args["earliest"] = max(args.get("earliest", "12:00"), "12:00")
+            if re.search(r"\bmorning\b", text, re.I):
+                recognized = True
+                args["latest"] = min(args.get("latest", "12:00"), "12:00")
+            # Exact starts are intentionally unsupported rather than silently ignored.
+            if re.search(r"\bat\b", text, re.I):
+                return final("clarification needed")
+        if not recognized or not {"attendees", "date", "duration_minutes"} <= args.keys():
+            return final("clarification needed")
+        return tool_call("find_free_slots", **args)

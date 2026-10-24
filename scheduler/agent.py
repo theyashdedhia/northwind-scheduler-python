@@ -42,6 +42,12 @@ class SchedulingAgent:
             self.turns = self.turns[-10:]
             return answer
 
+        # Resolve every explicit request name before any model action can bypass it.
+        try:
+            expected = requested_attendees(self.store, user_request, self.attendees)
+        except ValueError as error:
+            return finish(f"Unable to complete the request: {error}")
+
         # Only current-turn tool results may substantiate an answer.
         verified_answer = None
         for _ in range(self.max_steps):
@@ -67,7 +73,6 @@ class SchedulingAgent:
                     raise ValueError("Tool arguments must be an object.")
                 name, args = action["tool"], action["args"]
                 if name == "find_free_slots":
-                    expected = requested_attendees(self.store, user_request, self.attendees)
                     supplied = args.get("attendees")
                     if not isinstance(supplied, list) or not supplied:
                         raise ValueError("Provide at least one attendee.")

@@ -12,15 +12,18 @@ NON_PERSON = (r"^(?:later|earlier|afternoon|morning|noon|after|before|from|betwe
 
 def attendee_names(text: str) -> list[str]:
     """Read explicit attendee clauses, retaining unknown and misspelled names."""
-    names = re.search(
-        r"\b(?:with|for|check|about)\s+(.+?)(?=\s+(?:on|at|after|before|from|between|next|today|tomorrow|this|in the)\b|\s+\d|$)",
-        text, re.I)
-    if not names:
-        return []
-    fragment = re.sub(r"[?.!]+$", "", names.group(1)).strip()
-    if re.match(NON_PERSON, fragment, re.I):
-        return []
-    return [p.strip() for p in re.split(r"\s+and\s+|\s*&\s*|,", fragment, flags=re.I)]
+    names = []
+    clauses = re.finditer(
+        r"\b(?:with|for|check|about)\s+(.+?)(?="
+        r"\s+(?:and\s+)?(?:with|for|check|about)\s+|"
+        r"\s+(?:on|at|after|before|from|between|next|today|tomorrow|this|in the)\b|"
+        r"\s+\d|[;.!?]|$)", text, re.I)
+    for clause in clauses:
+        fragment = clause.group(1).strip()
+        if re.match(NON_PERSON, fragment, re.I):
+            continue
+        names.extend(p.strip() for p in re.split(r"\s+and\s+|\s*&\s*|,", fragment, flags=re.I))
+    return names
 
 
 def requested_attendees(store: Store, text: str, previous: list[str]) -> set[str]:

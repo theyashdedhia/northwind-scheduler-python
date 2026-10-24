@@ -27,3 +27,11 @@
 - Regression tests cover model omission/addition of attendees, typo resolution, inherited/replaced groups, explicit day-part bounds, and conflicting bounds.
 - Missing calendar entries for known employees mean no recorded busy blocks. Completeness is defined over the configured grid and supported durations.
 - Attendee checks handle explicit lists and known mentions, not unrestricted natural language or implicit references. Structured confirmation remains necessary for unrestricted interpretation guarantees. Booking remains outside scope.
+
+## Part A.2 verification and fixes
+
+- Verification found unknown names could bypass validation when the model returned only final text or looked up another person's busy times. Resolve request attendees before the first model call; an unknown or ambiguous name now produces an explicit directory error regardless of model behavior.
+- The attendee parser previously inspected only its first clause. It now reads every supported clause, including “with Sam on Tuesday and with Ghost”, adjacent repeated clauses, and separate sentences.
+- Added regressions for final-only, directory, busy-lookup, and incomplete scheduling actions; unknown follow-ups; and the offline fake path. These assert that rejected requests make no model calls and never reuse a previous availability answer.
+- Updated the existing omission test to expect zero model calls for an unknown user name, since rejection now happens earlier; valid-name mismatches still require one model call.
+- Scope remains explicit attendee clauses and known directory mentions, not unrestricted natural-language name recognition. Similarity resolution still targets directory entries only.

@@ -111,7 +111,7 @@ def test_model_cannot_drop_or_add_requested_attendees(user_request, attendees):
     answer = SchedulingAgent(model, Store.load()).run(user_request)
     assert answer.startswith("Unable to complete the request:")
     assert "Availability for" not in answer
-    assert len(model.calls) == 1
+    assert len(model.calls) == (0 if "Ghost" in user_request else 1)
 
 
 def test_time_only_follow_up_cannot_drop_previous_attendee():
@@ -128,3 +128,32 @@ def test_explicit_new_group_replaces_old_group():
     assert "Mei Tanaka" in agent.run("What about Mei?")
     agent.reset()
     assert agent.attendees == []
+
+
+@pytest.mark.parametrize("response", [
+    final("Ghost is not in the directory."),
+    tool_call("get_busy_times", person="sam", date="2026-11-03"),
+    schedule(attendees=["sam"]),
+    tool_call("list_people"),
+])
+@pytest.mark.parametrize("user_request", [
+    "Find 30 minutes with Sam and Ghost on Tuesday",
+    "Find 30 minutes with Sam on Tuesday and with Ghost",
+    "Find 30 minutes with Sam and with Ghost on Tuesday",
+])
+def test_unknown_person_reported_before_any_model_action(response, user_request):
+    model = FakeModel([response, final("done")])
+    answer = SchedulingAgent(model, Store.load()).run(user_request)
+    assert "Employee not found in the directory: Ghost" in answer
+    assert "Availability for" not in answer
+    assert model.calls == []
+
+
+def test_unknown_follow_up_is_reported_without_reusing_previous_result():
+    model = FakeModel([schedule(), final("done")])
+    agent = SchedulingAgent(model, Store.load())
+    agent.run("Find an hour with Priya and Sam on Tuesday")
+    answer = agent.run("What about Ghost?")
+    assert "Employee not found in the directory: Ghost" in answer
+    assert len(model.calls) == 2
+    assert agent.attendees == ["priya", "sam"]

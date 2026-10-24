@@ -56,3 +56,11 @@ def test_conflicting_period_and_explicit_bound_is_rejected():
     agent = SchedulingAgent(InteractiveFakeModel(), Store.load())
     answer = agent.run("Find 45 minutes with Mei on Tuesday afternoon before 10:00")
     assert "Bounds must be ordered" in answer
+
+
+def test_offline_unknown_second_clause_is_not_silently_dropped():
+    model = InteractiveFakeModel()
+    agent = SchedulingAgent(model, Store.load())
+    answer = agent.run("Find 30 minutes with Sam on Tuesday and with Ghost")
+    assert "Employee not found in the directory: Ghost" in answer
+    assert model.calls == []

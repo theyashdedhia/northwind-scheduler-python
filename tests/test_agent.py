@@ -185,3 +185,32 @@ def test_duplicate_keys_after_lookup_do_not_publish_stale_availability():
     answer = SchedulingAgent(model, Store.load()).run("Find an hour with Priya and Sam")
     assert "Duplicate JSON key: final" in answer
     assert "Availability for" not in answer
+
+
+@pytest.mark.parametrize("text", [
+    "Sam and Ghost need 30 minutes on Tuesday",
+    "Sam, Ghost want 30 minutes on Tuesday",
+])
+def test_unknown_subject_cannot_be_omitted_by_model(text):
+    model = FakeModel([schedule(attendees=["sam"]), final("done")])
+    answer = SchedulingAgent(model, Store.load()).run(text)
+    assert "Employee not found in the directory: Ghost" in answer
+    assert model.calls == []
+
+
+@pytest.mark.parametrize("duration", ["-30 minutes", "30.15 minutes", "1.25 minutes"])
+def test_bad_user_duration_rejected_before_model_execution(duration):
+    model = FakeModel([schedule(), final("done")])
+    answer = SchedulingAgent(model, Store.load()).run(f"Find {duration} with Priya and Sam on Tuesday")
+    assert "Duration must be a positive multiple" in answer
+    assert model.calls == []
+
+
+@pytest.mark.parametrize("args,text", [
+    ({"duration_minutes": 15}, "Find an hour with Priya and Sam on Tuesday"),
+    ({"earliest": "12:00", "latest": "17:00"}, "Find an hour with Priya and Sam on Tuesday after 12:00 and after 16:00"),
+])
+def test_model_cannot_override_parsed_duration_or_bounds(args, text):
+    answer = SchedulingAgent(FakeModel([schedule(**args), final("done")]), Store.load()).run(text)
+    assert "does not match" in answer or "do not match" in answer
+    assert "Availability for" not in answer

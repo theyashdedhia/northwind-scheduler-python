@@ -7,7 +7,7 @@ from .execution import execute_request, RequestDeadlineExceeded
 
 from .model import Model
 from .prompts import build_system_prompt
-from .requests import requested_attendees
+from .requests import requested_attendees, requested_duration, requested_bounds
 from .store import Store
 from .tools import TOOLS, resolve_person
 
@@ -83,6 +83,8 @@ class SchedulingAgent:
         # Resolve every explicit request name before any model action can bypass it.
         try:
             expected = requested_attendees(self.store, user_request, self.attendees)
+            duration = requested_duration(user_request)
+            bounds = requested_bounds(user_request)
         except ValueError as error:
             return finish(f"Unable to complete the request: {error}")
 
@@ -114,6 +116,10 @@ class SchedulingAgent:
                     supplied = args.get("attendees")
                     if not isinstance(supplied, list) or not supplied:
                         raise ValueError("Provide at least one attendee.")
+                    if duration is not None and args.get("duration_minutes") != duration:
+                        raise ValueError("Tool duration does not match the request.")
+                    if bounds is not None and any(args.get(key) != value for key, value in bounds.items()):
+                        raise ValueError("Tool time bounds do not match the request.")
                     actual = {resolve_person(self.store, p) for p in supplied}
                     if expected and actual != expected:
                         raise ValueError("Tool attendees do not match the request. Please restate the complete attendee list.")

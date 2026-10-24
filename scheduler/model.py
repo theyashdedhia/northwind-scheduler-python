@@ -78,19 +78,15 @@ class InteractiveFakeModel(FakeModel):
                 args = dict(action["args"])
         # Extract names as written, including unknown names; resolution belongs to tools.
         recognized = False
-        from .requests import attendee_names
+        from .requests import attendee_names, requested_duration, requested_bounds
         names = attendee_names(text)
         if names:
             recognized = True
             args["attendees"] = names
-        duration = re.search(r"\b(\d+)\s*(?:mins?|minutes?)\b", text, re.I)
-        hours = re.search(r"\b(an?|one|\d+)\s+hours?\b", text, re.I)
-        if duration:
+        duration = requested_duration(text)
+        if duration is not None:
             recognized = True
-            args["duration_minutes"] = int(duration.group(1))
-        elif hours:
-            recognized = True
-            args["duration_minutes"] = (int(hours.group(1)) if hours.group(1).isdigit() else 1) * 60
+            args["duration_minutes"] = duration
         explicit_date = re.search(r"\b\d{4}-\d{2}-\d{2}\b", text)
         weekday = re.search(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", text, re.I)
         today = date.fromisoformat(self.today)
@@ -110,34 +106,15 @@ class InteractiveFakeModel(FakeModel):
         elif re.search(r"\btoday\b", text, re.I):
             recognized = True
             args["date"] = self.today
-        # New time constraints replace old bounds rather than accumulating them.
-        if re.search(r"\b(after|before|at|from|between|morning|afternoon|noon)\b", text, re.I):
-            for bound in re.finditer(r"\b(?:after|before|from|to)\s+(\S+)", text, re.I):
-                if not re.fullmatch(r"\d{2}:\d{2}|noon", bound.group(1).rstrip("?.!,"), re.I):
-                    return final("clarification needed")
-            if re.search(r"\bbetween\b", text, re.I) and not re.search(
-                    r"\bbetween\s+\d{2}:\d{2}\s+and\s+\d{2}:\d{2}", text, re.I):
-                return final("clarification needed")
+        # New time constraints replace previous bounds; intersect all current bounds.
+        bounds = requested_bounds(text)
+        if bounds is not None:
+            recognized = True
             args.pop("earliest", None)
             args.pop("latest", None)
-            for word, key in [("after", "earliest"), ("before", "latest"), ("from", "earliest"), ("to", "latest")]:
-                match = re.search(rf"\b{word}\s+(\d{{2}}:\d{{2}}|noon)\b", text, re.I)
-                if match:
-                    recognized = True
-                    args[key] = "12:00" if match.group(1).lower() == "noon" else match.group(1)
-            between = re.search(r"\bbetween\s+(\d{2}:\d{2})\s+and\s+(\d{2}:\d{2})", text, re.I)
-            if between:
-                recognized = True
-                args.update(earliest=between.group(1), latest=between.group(2))
-            if re.search(r"\bafternoon\b", text, re.I):
-                recognized = True
-                args["earliest"] = max(args.get("earliest", "12:00"), "12:00")
-            if re.search(r"\bmorning\b", text, re.I):
-                recognized = True
-                args["latest"] = min(args.get("latest", "12:00"), "12:00")
-            # Exact starts are intentionally unsupported rather than silently ignored.
-            if re.search(r"\bat\b", text, re.I):
-                return final("clarification needed")
+            args.update(bounds)
+        if re.search(r"\bat\b", text, re.I):
+            return final("clarification needed")
         if not recognized or not {"attendees", "date", "duration_minutes"} <= args.keys():
             return final("clarification needed")
         return tool_call("find_free_slots", **args)

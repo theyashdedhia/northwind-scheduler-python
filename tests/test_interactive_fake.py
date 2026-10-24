@@ -34,8 +34,8 @@ def test_offline_fake_directory_and_unrelated_questions():
 def test_offline_fake_rejects_unsupported_time_bounds():
     agent = SchedulingAgent(InteractiveFakeModel(), Store.load())
     agent.run("Find 45 minutes with Sam on Tuesday")
-    assert "no availability has been verified" in agent.run("Check Mei before 5pm")
-    assert "no availability has been verified" in agent.run("Check Mei between nine and noon")
+    assert "Times must use HH:MM" in agent.run("Check Mei before 5pm")
+    assert "Times must use HH:MM" in agent.run("Check Mei between nine and noon")
 
 
 def test_afternoon_does_not_override_explicit_lower_bound():
@@ -64,3 +64,21 @@ def test_offline_unknown_second_clause_is_not_silently_dropped():
     answer = agent.run("Find 30 minutes with Sam on Tuesday and with Ghost")
     assert "Employee not found in the directory: Ghost" in answer
     assert model.calls == []
+
+
+def test_decimal_hours_are_converted_without_losing_the_fraction():
+    agent = SchedulingAgent(InteractiveFakeModel(), Store.load())
+    answer = agent.run("Find 1.5 hours with Sam on Tuesday before noon")
+    assert "90 minutes" in answer and "09:30–11:00" in answer
+
+
+def test_repeated_bounds_do_not_offer_earlier_times():
+    agent = SchedulingAgent(InteractiveFakeModel(), Store.load())
+    answer = agent.run("Find 45 minutes with Priya and Sam on Tuesday after 12:00 and after 16:00")
+    assert answer.endswith("16:00–16:45, 16:15–17:00.")
+
+
+def test_subject_first_request_works_offline():
+    agent = SchedulingAgent(InteractiveFakeModel(), Store.load())
+    answer = agent.run("Priya and Sam need 45 minutes on Tuesday afternoon")
+    assert "Priya Raman, Sam Okafor" in answer and "45 minutes" in answer

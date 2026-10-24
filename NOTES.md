@@ -16,6 +16,7 @@
 ## My additions
 
 - **Main addition — interactive terminal:** Employees can start `--interactive` and refine availability through follow-up questions about different times, dates, durations, or people without restarting. It works offline with `InteractiveFakeModel`, retains the last ten turns, and supports `/new` and `/quit`. Real-model access is optional through `--real-model`.
+This was chosen mainly because it seems like a must have as bookins is an interactive process rather than having to send commands again and again.
 - **Minor improvement — finer scheduling:** Fifteen-minute intervals support exact 15/45-minute meetings. Prompts derive the interval and working hours from `slots.py` to stay consistent with calculations.
 - **Minor improvement — typo-tolerant names:** Conservative fuzzy matching accepts clear misspellings while rejecting uncertain matches and displaying resolved employee names for review.
 

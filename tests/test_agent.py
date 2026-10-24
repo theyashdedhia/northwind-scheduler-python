@@ -157,3 +157,31 @@ def test_unknown_follow_up_is_reported_without_reusing_previous_result():
     assert "Employee not found in the directory: Ghost" in answer
     assert len(model.calls) == 2
     assert agent.attendees == ["priya", "sam"]
+
+
+@pytest.mark.parametrize("raw,key", [
+    ('{"tool":"missing","tool":"list_people","args":{}}', "tool"),
+    ('{"final":"first","final":"done"}', "final"),
+    ('{"tool":"list_people","args":{"extra":1},"args":{}}', "args"),
+    ('{"tool":"find_free_slots","args":{"attendees":["sam"],"date":"2026-11-03",'
+     '"duration_minutes":60,"duration_minutes":15}}', "duration_minutes"),
+    ('{"tool":"list_people","args":{"nested":{"value":1,"value":2}}}', "value"),
+    (r'{"tool":"list_people","args":{"x":1,"\u0078":2}}', "x"),
+    ('{"tool":"list_people","args":{"nested":[{"value":1,"value":1}]}}', "value"),
+])
+def test_duplicate_json_keys_rejected_before_tool_execution(monkeypatch, raw, key):
+    def unexpected_tool(*args, **kwargs):
+        pytest.fail("Duplicate keys must be rejected before executing a tool")
+
+    monkeypatch.setattr("scheduler.agent.TOOLS", {
+        "list_people": unexpected_tool, "find_free_slots": unexpected_tool,
+    })
+    answer = SchedulingAgent(FakeModel([raw]), Store.load()).run("Find a time")
+    assert answer == f"Unable to complete the request: Duplicate JSON key: {key}."
+
+
+def test_duplicate_keys_after_lookup_do_not_publish_stale_availability():
+    model = FakeModel([schedule(), '{"final":"done","final":"other"}'])
+    answer = SchedulingAgent(model, Store.load()).run("Find an hour with Priya and Sam")
+    assert "Duplicate JSON key: final" in answer
+    assert "Availability for" not in answer

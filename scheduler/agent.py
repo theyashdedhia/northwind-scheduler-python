@@ -9,6 +9,16 @@ from .store import Store
 from .tools import TOOLS, resolve_person
 
 
+def unique_json_object(pairs: list[tuple[str, object]]) -> dict:
+    """Reject ambiguous objects, including nested tool argument objects."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON key: {key}.")
+        result[key] = value
+    return result
+
+
 class SchedulingAgent:
     def __init__(self, model: Model, store: Store, today: str = "2026-11-02",
                  max_steps: int = 8):
@@ -56,7 +66,7 @@ class SchedulingAgent:
             except Exception:
                 return finish("The model is unavailable. Please try again.")
             try:
-                action = json.loads(raw)
+                action = json.loads(raw, object_pairs_hook=unique_json_object)
                 if not isinstance(action, dict):
                     raise ValueError("Expected a JSON object.")
                 if set(action) == {"final"}:

@@ -35,3 +35,9 @@
 - Added regressions for final-only, directory, busy-lookup, and incomplete scheduling actions; unknown follow-ups; and the offline fake path. These assert that rejected requests make no model calls and never reuse a previous availability answer.
 - Updated the existing omission test to expect zero model calls for an unknown user name, since rejection now happens earlier; valid-name mismatches still require one model call.
 - Scope remains explicit attendee clauses and known directory mentions, not unrestricted natural-language name recognition. Similarity resolution still targets directory entries only.
+
+## Part A.3 duplicate-key handling
+
+- Verification found Python's default JSON parser silently kept the final value of a repeated key, allowing conflicting durations to produce a wrong answer.
+- Added an object-pairs hook that rejects duplicate keys at every object depth before tool execution. The existing controlled-error path reports the offending key.
+- Regressions cover action keys, nested arguments, objects in arrays, identical repeated values, Unicode-escaped equivalent keys, and rejection after a successful lookup without publishing stale availability.

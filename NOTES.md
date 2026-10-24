@@ -41,3 +41,11 @@
 - Verification found Python's default JSON parser silently kept the final value of a repeated key, allowing conflicting durations to produce a wrong answer.
 - Added an object-pairs hook that rejects duplicate keys at every object depth before tool execution. The existing controlled-error path reports the offending key.
 - Regressions cover action keys, nested arguments, objects in arrays, identical repeated values, Unicode-escaped equivalent keys, and rejection after a successful lookup without publishing stale availability.
+
+## Part A.4 request deadlines
+
+- The model-call budget did not stop a single blocked model call. Each request now executes in a disposable process with one configurable `timeout_seconds` budget (30 seconds by default), covering the complete agent loop, validation, model calls, and tools.
+- The parent terminates timed-out workers, then kills stubborn ones, with two bounded 0.1-second cleanup waits. It commits session and FakeModel state only after successful completion; cancellation returns a clear timeout without publishing partial availability.
+- Added real cancellation tests using FakeModel subclasses: blocked model, blocked tool, cumulative deadline across calls, ignored termination, abrupt exit, session rollback, subsequent-request recovery, and invalid deadline settings. Tests verify no surviving workers. Existing call-limit tests remain intact.
+- The HTTP adapter also sets a socket timeout; the process deadline remains the overall safeguard. Result snapshots are capped at 8 MiB before loading in the parent.
+- POSIX uses fork for the local CLI; fallback spawn requires picklable models and a guarded entry point. The deadline bounds worker execution, with small process startup/cleanup and bounded result-loading overhead; it is not an operating-system hard real-time guarantee.

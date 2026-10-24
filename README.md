@@ -54,3 +54,18 @@ export LLM_BASE_URL=http://localhost:11434/v1
 export LLM_MODEL=llama3.1
 python main.py "Find 30 minutes with Mei and Luis on Tuesday"
 ```
+
+## Request execution limits
+
+Each request has at most eight model calls and a shared 30-second wall-clock
+budget. Set `SchedulingAgent(..., timeout_seconds=5)` to change the budget.
+The whole request runs in a disposable worker process. A blocked model or tool
+is terminated (then killed if necessary); the caller receives a timeout message.
+Partial results and session changes are discarded. Cleanup adds at most two
+0.1-second waits under normal process scheduling, plus startup/result overhead.
+
+FakeModel script consumption and call snapshots are synchronized back after
+completion. Other custom models execute in the worker; their in-memory mutations
+are isolated. POSIX uses fork, intended for this single-threaded CLI; other
+platforms use spawn and require a picklable model and a guarded entry point
+(`if __name__ == "__main__":`). Snapshot results larger than 8 MiB fail safely.

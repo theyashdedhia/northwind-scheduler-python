@@ -1,6 +1,9 @@
 """Bounded tool orchestration with per-session conversation history."""
 
 import json
+import math
+
+from .execution import execute_request, RequestDeadlineExceeded
 
 from .model import Model
 from .prompts import build_system_prompt
@@ -21,9 +24,13 @@ def unique_json_object(pairs: list[tuple[str, object]]) -> dict:
 
 class SchedulingAgent:
     def __init__(self, model: Model, store: Store, today: str = "2026-11-02",
-                 max_steps: int = 8):
+                 max_steps: int = 8, timeout_seconds: float = 30):
         if type(max_steps) is not int or max_steps < 1:
             raise ValueError("max_steps must be a positive integer.")
+        if (type(timeout_seconds) not in (int, float)
+                or not math.isfinite(timeout_seconds) or timeout_seconds <= 0):
+            raise ValueError("timeout_seconds must be a positive finite number.")
+        self.timeout_seconds = timeout_seconds
         self.model = model
         self.store = store
         self.today = today
@@ -37,7 +44,28 @@ class SchedulingAgent:
         self.attendees.clear()
 
     def run(self, user_request: str) -> str:
-        """Answer one turn, retaining up to ten completed turns for follow-ups."""
+        """Run one turn within the deadline; publish session state only on completion."""
+        if not isinstance(user_request, str) or not user_request.strip():
+            return "Please enter a scheduling question."
+        try:
+            answer, turns, attendees, fake_state = execute_request(self, user_request)
+        except RequestDeadlineExceeded:
+            answer = "The request timed out. Please try a more specific question."
+        except Exception:
+            answer = "The request could not be completed. Please try again."
+        else:
+            self.turns, self.attendees = turns, attendees
+            if fake_state is not None:
+                self.model.script, self.model.calls = fake_state
+            return answer
+        # Partial work from a cancelled/failed worker never changes session state.
+        self.turns.append([{"role": "user", "content": user_request},
+                           {"role": "assistant", "content": answer}])
+        self.turns = self.turns[-10:]
+        return answer
+
+    def _run(self, user_request: str) -> str:
+        """Execute inside the disposable worker; retain ten completed turns."""
         if not isinstance(user_request, str) or not user_request.strip():
             return "Please enter a scheduling question."
         turn = [{"role": "user", "content": user_request}]
